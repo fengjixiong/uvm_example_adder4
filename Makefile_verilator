@@ -1,0 +1,133 @@
+#==============================================================================
+# Verilator 5.050 + UVM-1800 Makefile for Adder Verification
+# 参考：https://github.com/antmicro/verilator-uvm-example
+#==============================================================================
+
+SHELL           = /bin/bash
+PROJECT_DIR     = $(shell pwd)
+WORK_DIR        = $(PROJECT_DIR)/obj_dir
+LOG_DIR         = $(PROJECT_DIR)/logs
+
+# 1. Verilator 5.050 路径设置
+#==============================================================================
+# 如果使用系统安装的 Verilator，PATH 中已包含即可
+# 如果从源码编译，设置如下：
+
+# 2. UVM-1800 路径
+#==============================================================================
+UVM_HOME        ?= ../uvm-1800.2-2020.3.1/src
+
+# 3. 文件列表
+#==============================================================================
+RTL_FILES       = $(PROJECT_DIR)/rtl/adder.sv
+
+UVM_FILES       = $(PROJECT_DIR)/tb/adder_if.sv \
+                  $(PROJECT_DIR)/tb/adder_transaction.sv \
+                  $(PROJECT_DIR)/tb/adder_sequence.sv \
+                  $(PROJECT_DIR)/tb/adder_sequencer.sv \
+                  $(PROJECT_DIR)/tb/adder_driver.sv \
+                  $(PROJECT_DIR)/tb/adder_monitor.sv \
+                  $(PROJECT_DIR)/tb/adder_agent.sv \
+                  $(PROJECT_DIR)/tb/adder_scoreboard.sv \
+                  $(PROJECT_DIR)/tb/adder_env.sv \
+                  $(PROJECT_DIR)/tb/adder_test.sv
+
+TOP_FILES       = $(PROJECT_DIR)/tb/tb_top.sv
+
+# UVM 包必须放在第一位
+UVM_PKG         = $(UVM_HOME)/uvm_pkg.sv
+
+ALL_SV_FILES    = $(UVM_PKG) $(RTL_FILES) $(UVM_FILES) $(TOP_FILES)
+
+# 4. Verilator 5.050 编译选项
+#==============================================================================
+VERILATOR_OPTS  = -Wno-fatal \
+                  -Wno-DEFOVERRIDE \
+                  -Wno-WIDTHTRUNC \
+                  -Wno-UNSIGNED \
+                  --binary \
+                  -j $(shell nproc) \
+                  --top-module tb_top \
+                  --timing \
+                  +incdir+$(UVM_HOME) \
+                  +incdir+$(PROJECT_DIR)/tb \
+                  -CFLAGS "-std=c++17 -O0 -g" \
+                  --sv \
+                  --trace
+# VERILATOR_OPTS += -f $(PROJECT_DIR)/filelist.f
+
+# UVM-1.2 with Verilator 必需宏
+# - UVM_NO_DPI: 禁用所有 DPI 调用（Verilator 不支持 UVM 的 DPI 函数）
+# - UVM_REGEX_NO_DPI: 禁用正则表达式 DPI
+# - UVM_HDL_NO_DPI: 禁用 HDL 后门访问 DPI（uvm_hdl_*）
+UVM_DEFINES     = +define+UVM_NO_DPI \
+                  +define+UVM_REGEX_NO_DPI \
+                  +define+UVM_HDL_NO_DPI \
+                  +define+UVM_OBJECT_MUST_USE_NEW
+
+# 5. 仿真选项
+#==============================================================================
+UVM_TESTNAME    ?= adder_test
+SEED            ?= 1
+VERBOSITY       ?= UVM_LOW
+
+SIM_OPTS        = +UVM_TESTNAME=$(UVM_TESTNAME) \
+                  +UVM_VERBOSITY=$(VERBOSITY) \
+                  +ntb_random_seed=$(SEED)
+
+# 6. 目标
+#==============================================================================
+.PHONY: all setup build run clean help
+
+all: build run
+
+# 编译
+build:
+	@echo "=========================================="
+	@echo "Building with Verilator 5.050..."
+	@echo "UVM-1800 with $(UVM_DEFINES)"
+	@echo "=========================================="
+	@mkdir -p $(LOG_DIR)
+	verilator $(VERILATOR_OPTS) $(UVM_DEFINES) $(ALL_SV_FILES)
+	@echo "Build completed! Executable: $(WORK_DIR)/Vtb_top"
+
+# 运行仿真
+run: build
+	@echo "=========================================="
+	@echo "Running UVM test: $(UVM_TESTNAME)"
+	@echo "Verilator 5.050 + UVM-1800"
+	@echo "=========================================="
+	$(WORK_DIR)/Vtb_top $(SIM_OPTS) -l $(LOG_DIR)/sim.log
+	@echo "Simulation completed! Log: $(LOG_DIR)/sim.log"
+
+# 生成波形（带 VCD 追踪）
+run_wave: build
+	$(WORK_DIR)/Vtb_top $(SIM_OPTS) -l $(LOG_DIR)/sim.log
+
+# 清理
+clean:
+	rm -rf $(WORK_DIR)
+	rm -rf $(LOG_DIR)
+	rm -f *.vcd *.vpd
+
+# 完全清理
+distclean: clean
+	rm -rf uvm-verilator
+
+help:
+	@echo "=========================================="
+	@echo "Verilator 5.050 + UVM-1800 Makefile"
+	@echo "=========================================="
+	@echo "可用目标："
+	@echo "  make all       - 下载UVM、编译、运行"
+	@echo "  make setup     - 下载UVN-1800 (chipsalliance版本)"
+	@echo "  make build     - 编译"
+	@echo "  make run       - 运行仿真"
+	@echo "  make run_wave  - 运行仿真并生成VCD波形"
+	@echo "  make clean     - 清理"
+	@echo ""
+	@echo "变量："
+	@echo "  UVM_TESTNAME  - 测试用例名 (default: adder_test)"
+	@echo "  SEED          - 随机种子 (default: 1)"
+	@echo "  VERBOSITY     - UVM日志等级 (default: UVM_LOW)"
+	@echo "=========================================="

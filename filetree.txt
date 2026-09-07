@@ -1,0 +1,21 @@
+project_root/
+├── Makefile                    # 主 Makefile
+├── rtl/
+│   └── adder.sv               # RTL 设计
+├── tb/
+│   ├── adder_if.sv
+│   ├── adder_transaction.sv
+│   ├── adder_sequencer.sv
+│   ├── adder_driver.sv
+│   ├── adder_monitor.sv
+│   ├── adder_agent.sv
+│   ├── adder_scoreboard.sv
+│   ├── adder_env.sv
+│   ├── adder_sequence.sv
+│   ├── adder_test.sv
+│   └── tb_top.sv
+├── scripts/
+│   └── run.tcl               # UCLI 脚本（可选）
+├── work/                     # 编译目录（自动生成）
+├── logs/                     # 日志目录（自动生成）
+└── reports/                  # 报告目录（自动生成）

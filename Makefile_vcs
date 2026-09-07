@@ -1,0 +1,176 @@
+#==============================================================================
+# 增强版 VCS Makefile for UVM Adder
+# 支持多种测试用例、覆盖率收集等
+#==============================================================================
+
+SHELL           = /bin/bash
+PROJECT_DIR     = $(shell pwd)
+WORK_DIR        = $(PROJECT_DIR)/work
+LOG_DIR         = $(PROJECT_DIR)/logs
+REPORT_DIR      = $(PROJECT_DIR)/reports
+COV_DIR         = $(PROJECT_DIR)/coverage
+
+# VCS 设置
+VCS_HOME        ?= /tools/synopsys/vcs
+UVM_HOME        ?= $(VCS_HOME)/etc/uvm
+
+# 文件列表
+RTL_FILES       = $(PROJECT_DIR)/rtl/adder.sv
+UVM_FILES       = $(wildcard $(PROJECT_DIR)/tb/*.sv)
+ALL_SV_FILES    = $(RTL_FILES) $(UVM_FILES)
+
+# 测试用例选择（可通过命令行覆盖）
+TEST_NAME       ?= adder_test
+SEED            ?= 1
+VERBOSITY       ?= UVM_LOW
+
+# 编译选项
+VCS_OPTS        = -sverilog -full64 \
+                  -debug_access+all \
+                  -debug_region+cell+encrypt \
+                  -lca -kdb -f \
+                  -timescale=1ns/1ps \
+                  +vcs+lic+wait
+
+UVM_OPTS        = -ntb_opts uvm-1.2 \
+                  -uvmhome $(UVM_HOME)
+
+# 覆盖率选项
+COV_OPTS        = -cm line+cond+tgl+branch+fsm \
+                  -cm_name $(TEST_NAME) \
+                  -cm_dir $(COV_DIR)/$(TEST_NAME)
+
+# 仿真选项
+SIM_OPTS        = +UVM_TESTNAME=$(TEST_NAME) \
+                  +UVM_VERBOSITY=$(VERBOSITY) \
+                  +ntb_random_seed=$(SEED) \
+                  +vcs+finish+100us
+
+# 波形选项
+WAVE_OPTS       = +vcd+vcdpluson \
+                  +vcd+vcdplusfile=wave_$(TEST_NAME).vpd
+
+# 日志文件
+LOG_FILE        = $(LOG_DIR)/$(TEST_NAME)_seed$(SEED).log
+
+#==============================================================================
+# 目标
+#==============================================================================
+.PHONY: all compile run clean distclean help coverage view_cov
+
+all: compile run
+
+init:
+    @mkdir -p $(WORK_DIR) $(LOG_DIR) $(REPORT_DIR) $(COV_DIR)
+
+# 编译
+compile: init
+    @echo "=========================================="
+    @echo "Compiling Test: $(TEST_NAME)"
+    @echo "=========================================="
+    cd $(WORK_DIR) && \
+    vcs $(VCS_OPTS) $(UVM_OPTS) $(COV_OPTS) \
+        $(ALL_SV_FILES) \
+        -o simv_$(TEST_NAME)
+    @echo "Compilation completed!"
+
+# 运行
+run: compile
+    @echo "=========================================="
+    @echo "Running Test: $(TEST_NAME) (Seed: $(SEED))"
+    @echo "=========================================="
+    cd $(WORK_DIR) && \
+    ./simv_$(TEST_NAME) $(WAVE_OPTS) $(SIM_OPTS) -l $(LOG_FILE)
+    @echo "Simulation completed! Log: $(LOG_FILE)"
+
+# 交互式运行
+gui: compile
+    cd $(WORK_DIR) && \
+    ./simv_$(TEST_NAME) -gui $(WAVE_OPTS) $(SIM_OPTS)
+
+# 运行多个种子
+regress:
+    @echo "=========================================="
+    @echo "Running regression with multiple seeds..."
+    @echo "=========================================="
+    @for seed in 1 2 3 4 5 10 20 50; do \
+        echo "Running with seed $$seed"; \
+        make run SEED=$$seed || true; \
+    done
+    @echo "Regression completed!"
+
+# 覆盖率收集
+coverage: compile
+    @echo "=========================================="
+    @echo "Running coverage collection..."
+    @echo "=========================================="
+    cd $(WORK_DIR) && \
+    ./simv_$(TEST_NAME) $(SIM_OPTS) -l $(LOG_FILE)
+    @echo "Coverage data saved to: $(COV_DIR)"
+
+# 查看覆盖率
+view_cov:
+    @echo "=========================================="
+    @echo "Opening Coverage Report..."
+    @echo "=========================================="
+    cd $(WORK_DIR) && \
+    urg -dir $(COV_DIR) -report $(REPORT_DIR)/cov_report
+    firefox $(REPORT_DIR)/cov_report/urgReport.html &
+
+# 使用 Verdi 查看
+verdi:
+    cd $(WORK_DIR) && \
+    verdi -sv $(ALL_SV_FILES) \
+          -ssf wave_$(TEST_NAME).vpd \
+          -top tb_top &
+
+# 清理
+clean:
+    rm -rf $(WORK_DIR)/simv* $(WORK_DIR)/*.vpd
+    rm -rf $(WORK_DIR)/csrc $(WORK_DIR)/DVEfiles
+    rm -rf $(WORK_DIR)/*.daidir $(WORK_DIR)/vc_hdrs.h
+    rm -f $(LOG_DIR)/*.log
+
+distclean: clean
+    rm -rf $(WORK_DIR) $(LOG_DIR) $(REPORT_DIR) $(COV_DIR)
+    rm -f vcs.key
+
+help:
+    @echo "=========================================="
+    @echo "UVM Adder - VCS Makefile Help"
+    @echo "=========================================="
+    @echo "Usage:"
+    @echo "  make [target] [VAR=value]"
+    @echo ""
+    @echo "Targets:"
+    @echo "  all        - Compile and run (default)"
+    @echo "  compile    - Compile only"
+    @echo "  run        - Compile and run"
+    @echo "  gui        - Run with GUI"
+    @echo "  regress    - Run regression with multiple seeds"
+    @echo "  coverage   - Run with coverage collection"
+    @echo "  view_cov   - View coverage report"
+    @echo "  verdi      - Open waveform with Verdi"
+    @echo "  clean      - Clean up"
+    @echo "  help       - Show this help"
+    @echo ""
+    @echo "Variables:"
+    @echo "  TEST_NAME  - Test case name (default: adder_test)"
+    @echo "  SEED       - Random seed (default: 1)"
+    @echo "  VERBOSITY  - UVM verbosity (default: UVM_LOW)"
+    @echo ""
+    @echo "Examples:"
+    @echo "  make run TEST_NAME=adder_test SEED=42"
+    @echo "  make gui VERBOSITY=UVM_HIGH"
+    @echo "  make regress"
+    @echo "=========================================="
+
+# 递归调用，支持多个测试
+regress_all:
+    @echo "=========================================="
+    @echo "Running all tests..."
+    @echo "=========================================="
+    @for test in adder_test adder_test2 adder_test3; do \
+        echo "Running $$test"; \
+        make run TEST_NAME=$$test || true; \
+    done
